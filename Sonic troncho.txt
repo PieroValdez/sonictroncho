@@ -1,0 +1,458 @@
+export default function IndieSpeedsterGame() {
+  return (
+    <iframe
+      srcDoc={`
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Sonic Alarako</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  overflow: hidden;
+  background: #000;
+  font-family: Arial, sans-serif;
+}
+
+canvas {
+  width: 100vw;
+  height: 100vh;
+  display: block;
+}
+
+.hud {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  color: white;
+  z-index: 10;
+  font-size: 22px;
+  text-shadow: 2px 2px 6px black;
+}
+
+.controls {
+  position: absolute;
+  bottom: 20px;
+  left: 20px;
+  color: white;
+  background: rgba(0,0,0,0.4);
+  padding: 12px 18px;
+  border-radius: 14px;
+  z-index: 10;
+  backdrop-filter: blur(4px);
+}
+</style>
+</head>
+<body>
+
+<div class="hud">
+  <div>⚡ Velocidad: <span id="speed">0</span></div>
+  <div>💎 Energía: <span id="rings">0</span></div>
+</div>
+
+<div class="controls">
+  A / D o ← → para moverse · ESPACIO para saltar
+</div>
+
+<canvas id="game"></canvas>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+
+resize();
+window.addEventListener('resize', resize);
+
+const keys = {};
+
+document.addEventListener('keydown', (e) => {
+  keys[e.key.toLowerCase()] = true;
+});
+
+document.addEventListener('keyup', (e) => {
+  keys[e.key.toLowerCase()] = false;
+});
+
+const gravity = 0.9;
+let ground = window.innerHeight - 140;
+
+const player = {
+  x: 180,
+  y: ground,
+  w: 72,
+  h: 72,
+  vx: 0,
+  vy: 0,
+  speed: 0.7,
+  maxSpeed: 16,
+  jump: -20,
+  grounded: true,
+  energy: 0,
+  rotation: 0
+};
+
+const rings = [];
+const mountains = [];
+const trees = [];
+const particles = [];
+
+const jumpSound = new Audio('https://actions.google.com/sounds/v1/cartoon/wood_plank_flicks.ogg');
+const ringSound = new Audio('https://actions.google.com/sounds/v1/cartoon/pop.ogg');
+const finishSound = new Audio('https://actions.google.com/sounds/v1/cartoon/concussive_hit_guitar_boing.ogg');
+
+for (let i = 0; i < 55; i++) {
+  rings.push({
+    x: 800 + i * 380,
+    y: ground - 40 - Math.random() * 80,
+    r: 18,
+    collected: false
+  });
+}
+
+for (let i = 0; i < 22; i++) {
+  mountains.push({
+    x: i * 500,
+    h: 180 + Math.random() * 250
+  });
+}
+
+for (let i = 0; i < 45; i++) {
+  trees.push({
+    x: i * 280 + 200,
+    y: ground - 20,
+    s: 0.7 + Math.random()
+  });
+}
+
+let worldOffset = 0;
+const levelEnd = 22000;
+let ending = false;
+
+function drawBackground() {
+  const sky = ctx.createLinearGradient(0, 0, 0, canvas.height);
+  sky.addColorStop(0, '#57c8ff');
+  sky.addColorStop(1, '#dff7ff');
+
+  ctx.fillStyle = sky;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const sunX = canvas.width - 180;
+  const sunY = 120;
+
+  const glow = ctx.createRadialGradient(sunX, sunY, 20, sunX, sunY, 120);
+  glow.addColorStop(0, 'rgba(255,255,220,1)');
+  glow.addColorStop(1, 'rgba(255,255,220,0)');
+
+  ctx.fillStyle = glow;
+  ctx.beginPath();
+  ctx.arc(sunX, sunY, 120, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath();
+    ctx.ellipse(
+      200 + i * 360 - worldOffset * 0.1,
+      120 + i * 12,
+      90,
+      40,
+      0,
+      0,
+      Math.PI * 2
+    );
+    ctx.fill();
+  }
+
+  mountains.forEach((m) => {
+    const mx = m.x - worldOffset * 0.2;
+
+    ctx.fillStyle = '#5f7f9a';
+    ctx.beginPath();
+    ctx.moveTo(mx, ground + 50);
+    ctx.lineTo(mx + 220, ground - m.h);
+    ctx.lineTo(mx + 440, ground + 50);
+    ctx.fill();
+  });
+
+  for (let i = 0; i < 50; i++) {
+    const bx = i * 260 - worldOffset * 0.4;
+
+    ctx.fillStyle = 'rgba(70,110,180,0.28)';
+    ctx.fillRect(bx, ground - 240, 120, 240);
+
+    ctx.fillStyle = 'rgba(255,255,180,0.7)';
+
+    for (let j = 0; j < 10; j++) {
+      ctx.fillRect(
+        bx + 12 + (j % 3) * 30,
+        ground - 220 + Math.floor(j / 3) * 42,
+        12,
+        20
+      );
+    }
+  }
+}
+
+function drawGround() {
+  const grass = ctx.createLinearGradient(0, ground, 0, canvas.height);
+  grass.addColorStop(0, '#4ee56f');
+  grass.addColorStop(1, '#1c6b34');
+
+  ctx.fillStyle = grass;
+  ctx.fillRect(0, ground + 40, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#35b956';
+
+  for (let i = 0; i < canvas.width / 40 + 2; i++) {
+    ctx.fillRect(
+      i * 40,
+      ground + 20 + Math.sin(i + worldOffset * 0.02) * 8,
+      40,
+      25
+    );
+  }
+
+  trees.forEach((t) => {
+    const tx = t.x - worldOffset * 0.6;
+
+    ctx.fillStyle = '#6b3d19';
+    ctx.fillRect(tx, t.y, 20 * t.s, 80 * t.s);
+
+    ctx.beginPath();
+    ctx.fillStyle = '#1f8c3c';
+    ctx.arc(tx + 10 * t.s, t.y - 10, 45 * t.s, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawParticles() {
+  particles.push({
+    x: player.x + 20,
+    y: player.y + 55,
+    alpha: 1,
+    size: Math.random() * 8 + 3
+  });
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const p = particles[i];
+
+    p.x -= player.vx * 0.4;
+    p.alpha -= 0.03;
+
+    ctx.beginPath();
+    ctx.fillStyle = 'rgba(255,255,255,' + p.alpha + ')';
+    ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+    ctx.fill();
+
+    if (p.alpha <= 0) {
+      particles.splice(i, 1);
+    }
+  }
+}
+
+function drawPlayer() {
+  drawParticles();
+
+  ctx.save();
+  ctx.translate(player.x + player.w / 2, player.y + player.h / 2);
+
+  if (!player.grounded) {
+    player.rotation += 0.2;
+  } else {
+    player.rotation *= 0.8;
+  }
+
+  ctx.rotate(player.rotation);
+
+  ctx.shadowColor = '#00c8ff';
+  ctx.shadowBlur = 25;
+
+  ctx.beginPath();
+  ctx.fillStyle = '#008cff';
+  ctx.arc(0, 0, 35, 0, Math.PI * 2);
+  ctx.fill();
+
+  for (let i = 0; i < 6; i++) {
+    ctx.beginPath();
+    ctx.moveTo(0, -10);
+    ctx.lineTo(-45 + i * 10, -45);
+    ctx.lineTo(-15 + i * 8, -5);
+    ctx.fillStyle = '#0058cc';
+    ctx.fill();
+  }
+
+  ctx.beginPath();
+  ctx.fillStyle = '#ffe0bd';
+  ctx.arc(10, 8, 18, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.fillStyle = 'white';
+  ctx.arc(10, -8, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.fillStyle = 'black';
+  ctx.arc(14, -8, 4, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#ff2f2f';
+  ctx.fillRect(-25, 25, 18, 10);
+  ctx.fillRect(10, 25, 18, 10);
+
+  ctx.restore();
+}
+
+function drawRings() {
+  rings.forEach((ring) => {
+    if (ring.collected) {
+      return;
+    }
+
+    const rx = ring.x - worldOffset;
+
+    ctx.beginPath();
+    ctx.strokeStyle = 'gold';
+    ctx.lineWidth = 8;
+    ctx.arc(rx, ring.y, ring.r, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const dist = Math.hypot(
+      player.x + player.w / 2 - rx,
+      player.y + player.h / 2 - ring.y
+    );
+
+    if (dist < 50) {
+      ring.collected = true;
+      player.energy += 1;
+      ringSound.currentTime = 0;
+      ringSound.play();
+    }
+  });
+}
+
+function update() {
+  if (worldOffset >= levelEnd) {
+    ending = true;
+    finishSound.play();
+    player.vx *= 0.98;
+  }
+
+  if (keys['d'] || keys['arrowright']) {
+    player.vx += player.speed;
+  }
+
+  if (keys['a'] || keys['arrowleft']) {
+    player.vx -= player.speed;
+  }
+
+  if ((keys[' '] || keys['w'] || keys['arrowup']) && player.grounded) {
+    jumpSound.currentTime = 0;
+    jumpSound.play();
+    player.vy = player.jump;
+    player.grounded = false;
+  }
+
+  player.vx *= 0.96;
+
+  if (player.vx > player.maxSpeed) {
+    player.vx = player.maxSpeed;
+  }
+
+  if (player.vx < -player.maxSpeed) {
+    player.vx = -player.maxSpeed;
+  }
+
+  player.vy += gravity;
+  player.y += player.vy;
+
+  if (player.y >= ground) {
+    player.y = ground;
+    player.vy = 0;
+    player.grounded = true;
+  }
+
+  if (!ending) {
+    worldOffset += player.vx;
+  }
+
+  const speedEl = document.getElementById('speed');
+  const ringsEl = document.getElementById('rings');
+
+  if (speedEl) {
+    speedEl.innerText = Math.abs(player.vx * 12).toFixed(0);
+  }
+
+  if (ringsEl) {
+    ringsEl.innerText = String(player.energy);
+  }
+}
+
+function drawEnding() {
+  ctx.fillStyle = 'rgba(0,0,0,0.6)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = 'white';
+  ctx.textAlign = 'center';
+  ctx.shadowColor = '#ff5cd6';
+  ctx.shadowBlur = 30;
+
+  ctx.font = 'bold 82px Arial';
+  ctx.fillText('Almendra te amo', canvas.width / 2, canvas.height / 2);
+
+  ctx.font = 'bold 38px Arial';
+  ctx.fillText('SONIC ALARAKO', canvas.width / 2, canvas.height / 2 - 90);
+
+  ctx.font = '28px Arial';
+  ctx.fillText(
+    'El camino es largo pero valdrá la pena.',
+    canvas.width / 2,
+    canvas.height / 2 + 70
+  );
+}
+
+function gameLoop() {
+  ground = window.innerHeight - 140;
+
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  drawBackground();
+  drawGround();
+  drawRings();
+  drawPlayer();
+
+  if (ending) {
+    drawEnding();
+  }
+
+  update();
+
+  requestAnimationFrame(gameLoop);
+}
+
+gameLoop();
+</script>
+</body>
+</html>
+      `}
+      style={{
+        width: '100%',
+        height: '100vh',
+        border: 'none'
+      }}
+      title="Sonic Alarako"
+    />
+  );
+}
